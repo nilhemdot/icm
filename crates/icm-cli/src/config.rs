@@ -259,6 +259,10 @@ pub struct RecallConfig {
     pub server_limit: usize,
     /// How long the hook waits for the server, in milliseconds.
     pub server_timeout_ms: u64,
+    /// Rerank `icm recall` results remotely. `"jev:<model>"` (e.g.
+    /// `"jev:jev-latest"`) uses TypeSafe's Jev API with `TYPESAFE_API_KEY`;
+    /// empty disables reranking.
+    pub reranker: String,
 }
 
 /// Wake-up pack settings (SessionStart hook).
@@ -493,6 +497,7 @@ impl Default for RecallConfig {
             // of 10 memories answered about 6 more than keyword recall of 5.
             server_limit: 10,
             server_timeout_ms: 800,
+            reranker: String::new(),
         }
     }
 }
