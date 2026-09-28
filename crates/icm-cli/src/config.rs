@@ -176,6 +176,10 @@ pub struct RecallConfig {
     pub enabled: bool,
     /// Maximum memories to inject.
     pub limit: usize,
+    /// Rerank `icm recall` results remotely. `"jev:<model>"` (e.g.
+    /// `"jev:jev-latest"`) uses TypeSafe's Jev API with `TYPESAFE_API_KEY`;
+    /// empty disables reranking.
+    pub reranker: String,
 }
 
 /// Wake-up pack settings (SessionStart hook).
@@ -368,6 +372,7 @@ impl Default for RecallConfig {
         Self {
             enabled: true,
             limit: 15,
+            reranker: String::new(),
         }
     }
 }

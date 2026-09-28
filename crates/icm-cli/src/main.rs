@@ -16,6 +16,7 @@ mod extract_semantic;
 mod http_api;
 mod import;
 mod install_manifest;
+mod jev;
 #[cfg(test)]
 mod learn_tests;
 // First-launch onnxruntime resolution for the load-dynamic embeddings build
@@ -2129,6 +2130,7 @@ fn main() -> Result<()> {
                 keyword.as_deref(),
                 project.as_deref(),
                 format,
+                jev::model_from_config(&cfg.recall.reranker),
             )
         }
         Commands::List {
@@ -2970,6 +2972,7 @@ fn cmd_recall(
     keyword: Option<&str>,
     project: Option<&str>,
     format: recall_format::RecallFormat,
+    jev_model: Option<&str>,
 ) -> Result<()> {
     // Auto-decay if >24h since last decay
     if let Err(e) = store.maybe_auto_decay() {
@@ -2997,7 +3000,11 @@ fn cmd_recall(
     // only at the very end (`expand_with_neighbors`'s `max_total`).
     let project_active = matches!(project, Some(p) if !p.is_empty());
     let filters_active = project_active || topic.is_some() || keyword.is_some();
-    let query_limit = recall_query_limit(limit, filters_active);
+    let mut query_limit = recall_query_limit(limit, filters_active);
+    // Reranking needs a wider pool to reorder (memsearch fetches 3x top_k).
+    if jev_model.is_some() {
+        query_limit = query_limit.max(limit.saturating_mul(3));
+    }
 
     // Try hybrid search if embedder is available; fall back to FTS / keywords.
     let scored: Option<Vec<(Memory, f32)>> = embedder
@@ -3038,6 +3045,21 @@ fn cmd_recall(
     };
 
     results.retain(&filter);
+
+    // Optional Jev rerank: replace scores with Jev's relevance probability
+    // and keep the top `limit` before graph expansion folds in neighbours.
+    let mut has_score = has_score;
+    if let Some(model) = jev_model {
+        let docs: Vec<&str> = results.iter().map(|(m, _)| m.summary.as_str()).collect();
+        let jev_scores = jev::score(model, query, &docs)?;
+        for ((_, s), js) in results.iter_mut().zip(jev_scores) {
+            *s = Some(js);
+        }
+        // Stable sort keeps the hybrid order on ties.
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.truncate(limit);
+        has_score = true;
+    }
 
     // Graph-aware expansion: follow related_ids one hop and fold
     // neighbours back in (discounted ×0.5). Audit R13b: re-apply
