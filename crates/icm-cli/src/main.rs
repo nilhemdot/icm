@@ -3704,13 +3704,16 @@ fn render_recall_v2_with_reranker(
         .unzip();
 
     let docs: Vec<&str> = results.iter().map(|(m, _)| m.summary.as_str()).collect();
-    if let Some((order, scores)) = rerank_order(reranker, request.query, &docs) {
-        let mut slots: Vec<Option<RankedHit>> = results.into_iter().zip(raw).map(Some).collect();
-        (results, raw) = order
-            .into_iter()
-            .filter_map(|i| slots[i].take().map(|((m, _), r)| ((m, Some(scores[i])), r)))
-            .unzip();
-    }
+    // A wider pool ranks slightly differently, so a failed rerank answers
+    // with the plain recall rather than the head of the pool.
+    let Some((order, scores)) = rerank_order(reranker, request.query, &docs) else {
+        return render_recall_v2_reranked(store, embedder, None, request, format);
+    };
+    let mut slots: Vec<Option<RankedHit>> = results.into_iter().zip(raw).map(Some).collect();
+    (results, raw) = order
+        .into_iter()
+        .filter_map(|i| slots[i].take().map(|((m, _), r)| ((m, Some(scores[i])), r)))
+        .unzip();
     results.truncate(request.limit);
     raw.truncate(request.limit);
 

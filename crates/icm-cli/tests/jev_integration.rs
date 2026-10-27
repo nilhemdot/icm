@@ -236,6 +236,17 @@ fn http_error_keeps_local_order_without_leaking_key_or_body() {
     );
     let results: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(results.as_array().unwrap().len(), 2, "{results}");
+    // The fallback is the plain recall, not the head of the wider pool.
+    let plain = recall_json(&Env::with_reranker(""), &url, "2", "v2");
+    let plain: Value = serde_json::from_slice(&plain.stdout).unwrap();
+    let summaries = |v: &Value| -> Vec<String> {
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["summary"].to_string())
+            .collect()
+    };
+    assert_eq!(summaries(&results), summaries(&plain));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("HTTP 500"), "{stderr}");
     for leak in [KEY, "SECRET_RESPONSE_BODY"] {
